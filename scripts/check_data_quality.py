@@ -4,9 +4,14 @@ from scripts.load_olist_raw import connect_to_postgres
 def main():
     checks = [
         {
-            "name": "Total orders",
-            "query": "SELECT COUNT(*) FROM staging.stg_orders",
-            "expected": 99_441,
+            "name": "Staging orders match raw orders",
+            "query": """
+                SELECT
+                    (SELECT COUNT(*) FROM staging.stg_orders)
+                    -
+                    (SELECT COUNT(*) FROM raw_olist.olist_orders)
+            """,
+            "expected": 0,
             "severity": "FAIL",
         },
         {
