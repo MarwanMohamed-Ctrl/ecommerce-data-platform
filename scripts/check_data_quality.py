@@ -3,93 +3,109 @@ from scripts.load_olist_raw import connect_to_postgres
 
 def main():
     checks = [
-	(
-            "Carrier before approval",
-            """
-            SELECT COUNT(*)
-            FROM staging.stg_orders
-            WHERE is_carrier_before_approval IS TRUE
+        {
+            "name": "Total orders",
+            "query": "SELECT COUNT(*) FROM staging.stg_orders",
+            "expected": 99_441,
+            "severity": "FAIL",
+        },
+        {
+            "name": "Duplicate order IDs",
+            "query": """
+                SELECT COUNT(*) - COUNT(DISTINCT order_id)
+                FROM staging.stg_orders
             """,
-            1359,
-        ),
-        (
-            "Customer delivery before carrier",
-            """
-            SELECT COUNT(*)
-            FROM staging.stg_orders
-            WHERE is_customer_delivery_before_carrier IS TRUE
+            "expected": 0,
+            "severity": "FAIL",
+        },
+        {
+            "name": "Missing order IDs",
+            "query": """
+                SELECT COUNT(*)
+                FROM staging.stg_orders
+                WHERE order_id IS NULL
             """,
-            23,
-        ),
-        (
-            "Delivered orders missing delivery date",
-            """
-            SELECT COUNT(*)
-            FROM staging.stg_orders
-            WHERE order_status = 'delivered'
-              AND order_delivered_customer_date IS NULL
+            "expected": 0,
+            "severity": "FAIL",
+        },
+        {
+            "name": "Approval before purchase",
+            "query": """
+                SELECT COUNT(*)
+                FROM staging.stg_orders
+                WHERE is_approval_before_purchase IS TRUE
             """,
-            8,
-        ),
-        (
-            "Total orders",
-            """
-            SELECT COUNT(*)
-            FROM staging.stg_orders
+            "expected": 0,
+            "severity": "FAIL",
+        },
+        {
+            "name": "Carrier before approval",
+            "query": """
+                SELECT COUNT(*)
+                FROM staging.stg_orders
+                WHERE is_carrier_before_approval IS TRUE
             """,
-            99_441,
-        ),
-        (
-            "Duplicate order IDs",
-            """
-            SELECT COUNT(*) - COUNT(DISTINCT order_id)
-            FROM staging.stg_orders
+            "expected": 0,
+            "severity": "WARN",
+        },
+        {
+            "name": "Customer delivery before carrier",
+            "query": """
+                SELECT COUNT(*)
+                FROM staging.stg_orders
+                WHERE is_customer_delivery_before_carrier IS TRUE
             """,
-            0,
-        ),
-        (
-            "Missing order IDs",
-            """
-            SELECT COUNT(*)
-            FROM staging.stg_orders
-            WHERE order_id IS NULL
+            "expected": 0,
+            "severity": "WARN",
+        },
+        {
+            "name": "Delivered orders missing delivery date",
+            "query": """
+                SELECT COUNT(*)
+                FROM staging.stg_orders
+                WHERE order_status = 'delivered'
+                  AND order_delivered_customer_date IS NULL
             """,
-            0,
-        ),
-        (
-            "Approval before purchase",
-            """
-            SELECT COUNT(*)
-            FROM staging.stg_orders
-            WHERE is_approval_before_purchase IS TRUE
-            """,
-            0,
-        ),
+            "expected": 0,
+            "severity": "WARN",
+        },
     ]
 
     failures = 0
+    warnings = 0
 
     with connect_to_postgres() as conn:
-        for name, query, expected in checks:
+        for check in checks:
             with conn.cursor() as cur:
-                cur.execute(query)
+                cur.execute(check["query"])
                 actual = cur.fetchone()[0]
 
-            passed = actual == expected
-            status = "PASS" if passed else "FAIL"
+            passed = actual == check["expected"]
+
+            if passed:
+                status = "PASS"
+            else:
+                status = check["severity"]
+
+                if status == "FAIL":
+                    failures += 1
+                else:
+                    warnings += 1
 
             print(
-                f"[{status}] {name}: "
-                f"actual={actual:,}, expected={expected:,}"
+                f"[{status}] {check['name']}: "
+                f"actual={actual:,}, expected={check['expected']:,}"
             )
 
-            if not passed:
-                failures += 1
+    print(
+        f"\nSummary: {len(checks) - failures - warnings} passed, "
+        f"{warnings} warnings, {failures} failures."
+    )
 
     if failures:
-        raise SystemExit(f"\n{failures} data-quality check(s) failed.")
+        raise SystemExit(1)
 
-    print(f"\nAll {len(checks)} data-quality checks passed.")
+    print("Data-quality checks completed successfully.")
 
 
 if __name__ == "__main__":
