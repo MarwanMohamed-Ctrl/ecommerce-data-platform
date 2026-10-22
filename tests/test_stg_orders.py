@@ -57,14 +57,20 @@ def test_stg_orders_has_expected_columns():
     )
 
 
-def test_stg_orders_row_count():
+def test_stg_orders_matches_raw_row_count():
     with get_connection() as conn:
-        count = conn.execute(
+        raw_count = conn.execute(
+            "SELECT COUNT(*) FROM raw_olist.olist_orders"
+        ).fetchone()[0]
+
+        staging_count = conn.execute(
             "SELECT COUNT(*) FROM staging.stg_orders"
         ).fetchone()[0]
 
-    assert count == 99_441
-
+    assert staging_count == raw_count, (
+        f"Staging has {staging_count} rows, "
+        f"but raw has {raw_count} rows"
+    )
 
 def test_stg_orders_quality_flags():
     with get_connection() as conn:
