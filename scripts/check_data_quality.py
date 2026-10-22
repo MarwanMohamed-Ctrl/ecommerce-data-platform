@@ -3,6 +3,15 @@ from scripts.load_olist_raw import connect_to_postgres
 
 def main():
     checks = [
+	{
+            "name": "Raw orders have unique, non-empty IDs",
+            "query": """
+                SELECT COUNT(*) - COUNT(DISTINCT NULLIF(order_id, ''))
+                FROM raw_olist.olist_orders
+            """,
+            "expected": 0,
+            "severity": "FAIL",
+        },
         {
             "name": "Staging orders match raw orders",
             "query": """
