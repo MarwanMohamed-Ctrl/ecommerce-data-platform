@@ -1,3 +1,5 @@
+
+import hashlib
 import os
 import re
 from pathlib import Path
@@ -50,9 +52,10 @@ def discover_migrations():
 
         version = match.group(1)
         description = path.stem[len(version) + 1:]
-        migrations.append((version, description, path))
+        checksum = hashlib.sha256(path.read_bytes()).hexdigest()
+        migrations.append((version, description, path, checksum))
 
-    versions = [version for version, _, _ in migrations]
+    versions = [version for version, _, _, _ in migrations]
     if len(versions) != len(set(versions)):
         raise ValueError("Duplicate migration versions found.")
 
@@ -74,23 +77,57 @@ def main():
                     schema_migrations.applied_migrations (
                         version VARCHAR(100) PRIMARY KEY,
                         applied_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                        description TEXT
+                        description TEXT,
+                        checksum CHAR(64)
                     );
             """)
+            cur.execute("""
+                ALTER TABLE schema_migrations.applied_migrations
+                ADD COLUMN IF NOT EXISTS checksum CHAR(64);
+            """)
 
-        for version, description, path in migrations:
+        for version, description, path, checksum in migrations:
             with conn.transaction():
                 with conn.cursor() as cur:
                     cur.execute(
                         """
-                        SELECT 1
+                        SELECT checksum
                         FROM schema_migrations.applied_migrations
                         WHERE version = %s
                         """,
                         (version,),
                     )
-                    if cur.fetchone():
-                        print(f"Skipping {path.name}: already applied")
+                    row = cur.fetchone()
+
+                    if row:
+                        stored_checksum = row[0]
+
+                        if stored_checksum is None:
+                            # Backfill history for migrations recorded before
+                            # checksum support was introduced.
+                            cur.execute(
+                                """
+                                UPDATE schema_migrations.applied_migrations
+                                SET checksum = %s
+                                WHERE version = %s
+                                  AND checksum IS NULL
+                                """,
+                                (checksum, version),
+                            )
+                            print(
+                                f"Recorded baseline checksum for {path.name}"
+                            )
+                        elif stored_checksum.strip() != checksum:
+                            raise RuntimeError(
+                                f"Checksum mismatch for applied migration "
+                                f"{path.name}. Do not edit an applied "
+                                "migration; create a new migration instead."
+                            )
+                        else:
+                            print(
+                                f"Skipping {path.name}: already applied "
+                                "and checksum matches"
+                            )
                         continue
 
                     sql = path.read_text(encoding="utf-8")
@@ -98,10 +135,14 @@ def main():
                     cur.execute(
                         """
                         INSERT INTO schema_migrations.applied_migrations
-                            (version, description)
-                        VALUES (%s, %s)
+                            (version, description, checksum)
+                        VALUES (%s, %s, %s)
                         """,
-                        (version, description.replace("_", " ")),
+                        (
+                            version,
+                            description.replace("_", " "),
+                            checksum,
+                        ),
                     )
 
             print(f"Applied {path.name}")
