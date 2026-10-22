@@ -3,6 +3,34 @@ from scripts.load_olist_raw import connect_to_postgres
 
 def main():
     checks = [
+	(
+            "Carrier before approval",
+            """
+            SELECT COUNT(*)
+            FROM staging.stg_orders
+            WHERE is_carrier_before_approval IS TRUE
+            """,
+            1359,
+        ),
+        (
+            "Customer delivery before carrier",
+            """
+            SELECT COUNT(*)
+            FROM staging.stg_orders
+            WHERE is_customer_delivery_before_carrier IS TRUE
+            """,
+            23,
+        ),
+        (
+            "Delivered orders missing delivery date",
+            """
+            SELECT COUNT(*)
+            FROM staging.stg_orders
+            WHERE order_status = 'delivered'
+              AND order_delivered_customer_date IS NULL
+            """,
+            8,
+        ),
         (
             "Total orders",
             """
