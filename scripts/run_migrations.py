@@ -131,6 +131,10 @@ def main():
                         continue
 
                     sql = path.read_text(encoding="utf-8")
+
+                    if version == "001":
+                        sql = sql.removeprefix("BEGIN;\n").removesuffix("COMMIT;\n")
+
                     cur.execute(sql)
                     cur.execute(
                         """
